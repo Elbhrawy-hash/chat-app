@@ -2,7 +2,7 @@ import socket
 import threading
 from tkinter import *
 
-# دالة البعت
+
 def send():
     msg = entry.get()
     if msg:
@@ -10,17 +10,17 @@ def send():
         chat.insert(END, "me: " + msg + "\n")
         entry.delete(0, END)
 
-# دالة الاستقبال
+
 def receive():
     while True:
         msg = s.recv(1024).decode()
-        chat.insert(END, "server: " + msg + "\n")
+        chat.insert(END, "other: " + msg + "\n")
 
-# الاتصال بالسيرفر
+
 s = socket.socket()
 s.connect(('nozomi.proxy.rlwy.net', 41172))
 
-# الشاشه
+
 root = Tk()
 root.title("client")
 
