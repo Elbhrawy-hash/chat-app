@@ -1,47 +1,29 @@
 import socket
 import threading
-from tkinter import *
 
-# دالة البعت
-def send():
-    msg = entry.get()
-    if msg:
-        s.send(msg.encode())
-        chat.insert(END, "me: " + msg + "\n")
-        entry.delete(0, END)
+clients = []
 
-# دالة الاستقبال
-def receive():
+def handle(conn):
     while True:
-        msg = s.recv(1024).decode()
-        chat.insert(END, "client: " + msg + "\n")
+        try:
+            msg = conn.recv(1024)
+            if not msg:
+                break
+            for c in clients:
+                if c != conn:
+                    c.send(msg)
+        except:
+            break
+    clients.remove(conn)
+    conn.close()
 
-# استنى حد يتصل
-def accept():
-    global s
-    s, addr = server.accept()
-    chat.insert(END, "someone connected !!\n")
-    threading.Thread(target=receive, daemon=True).start()
-
-# عمل السيرفر
 server = socket.socket()
-server.bind(('localhost', 12345))
-server.listen(1)
+server.bind(('0.0.0.0', 12345))
+server.listen(5)
+print("Server running...")
 
-# الشاشه
-root = Tk()
-root.title("server")
-
-chat = Text(root)
-chat.pack()
-
-frame = Frame(root)
-frame.pack()
-
-entry = Entry(frame, width=30)
-entry.pack(side=LEFT)
-
-Button(frame, text="send", command=send).pack(side=LEFT)
-
-threading.Thread(target=accept, daemon=True).start()
-root.mainloop()
+while True:
+    conn, addr = server.accept()
+    clients.append(conn)
+    print(f"Connected: {addr}")
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
