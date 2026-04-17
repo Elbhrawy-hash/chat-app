@@ -18,7 +18,7 @@ def receive():
 
 # الاتصال بالسيرفر
 s = socket.socket()
-s.connect(('localhost', 12345))
+s.connect(('nozomi.proxy.rlwy.net', 41172))
 
 # الشاشه
 root = Tk()
