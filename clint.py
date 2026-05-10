@@ -84,7 +84,7 @@ def send_file():
     with open(path, "rb") as f:
         file_data = f.read()
 
-    payload = f"{t}|eslam|{os.path.basename(path)}|".encode() + file_data
+    payload = f"{t}|other|{os.path.basename(path)}|".encode() + file_data
     send_packet(s, payload)
     add_bubble(f"📎 {t} sent", side="right")
 
