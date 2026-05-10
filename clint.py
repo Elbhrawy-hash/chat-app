@@ -1,248 +1,171 @@
 import socket
 import threading
-import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+import struct
+from tkinter import *
+from tkinter import filedialog
 import io
+from PIL import Image
 import os
-from datetime import datetime
-
-try:
-    from PIL import Image, ImageTk
-    PIL_OK = True
-except:
-    PIL_OK = False
-
-# ==============================
-# PROTOCOL
-# ==============================
-EOF_MARKER = b'\x00\xFF\xEE\xFF\x00'
 
 
-def recv_message(conn):
-    buffer = b''
-    while True:
-        chunk = conn.recv(4096)
-        if not chunk:
+def send_packet(sock, data):
+    sock.sendall(struct.pack("!I", len(data)) + data)
+
+
+def recvall(sock, n):
+    data = b""
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
             return None
-        buffer += chunk
-        if EOF_MARKER in buffer:
-            data, _ = buffer.split(EOF_MARKER, 1)
-            return data
+        data += packet
+    return data
 
 
-def send_message(conn, data):
-    conn.sendall(data + EOF_MARKER)
+def add_bubble(msg, side="left"):
+    """إضافة فقاعة رسالة - side='right' للمرسِل، 'left' للمستقبِل"""
+    frame = Frame(messages_frame, bg="#1e1e2e")
+    frame.pack(fill=X, padx=10, pady=4, anchor="e" if side == "right" else "w")
+
+    bubble_color = "#4f8ef7" if side == "right" else "#2e2e3e"
+    text_color   = "#ffffff"
+
+    bubble = Label(
+        frame,
+        text=msg,
+        bg=bubble_color,
+        fg=text_color,
+        font=("Segoe UI", 10),
+        wraplength=250,
+        justify="right" if side == "right" else "left",
+        padx=10,
+        pady=6,
+    )
+    bubble.pack(anchor="e" if side == "right" else "w")
+
+    # سكرول لآخر رسالة
+    root.after(50, lambda: canvas.yview_moveto(1.0))
 
 
-# ==============================
-# CONNECT
-# ==============================
-HOST = "nozomi.proxy.rlwy.net"
-PORT = 41172
-
-username = simpledialog.askstring("Username", "Enter your name:") or "User"
-
-sock = socket.socket()
-sock.connect((HOST, PORT))
-send_message(sock, username.encode())
-
-hd_mode = False
-
-# ==============================
-# GUI
-# ==============================
-root = tk.Tk()
-root.title(f"Chat - {username}")
-root.configure(bg="#1e1e2e")
-root.geometry("420x600")
-
-chat_frame = tk.Frame(root, bg="#1e1e2e")
-chat_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-
-scrollbar = tk.Scrollbar(chat_frame)
-scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-chat_box = tk.Text(
-    chat_frame, bg="#1e1e2e", fg="white",
-    font=("Helvetica", 11), wrap=tk.WORD,
-    yscrollcommand=scrollbar.set, state=tk.DISABLED,
-    relief=tk.FLAT, padx=8, pady=8
-)
-chat_box.pack(fill=tk.BOTH, expand=True)
-scrollbar.config(command=chat_box.yview)
-
-chat_box.tag_config("me", foreground="#e94560", justify="right")
-chat_box.tag_config("other", foreground="#4ecca3", justify="left")
-chat_box.tag_config("system", foreground="#555", justify="center")
-chat_box.tag_config("time", foreground="#444", font=("Helvetica", 8))
+def send():
+    msg = entry.get()
+    if msg:
+        send_packet(s, f"TEXT|eslam|{msg}".encode())
+        add_bubble("me: " + msg, side="right")
+        entry.delete(0, END)
 
 
-def add_message(sender, text, side):
-    chat_box.config(state=tk.NORMAL)
-    time_str = datetime.now().strftime("%H:%M")
-    tag = "me" if side == "right" else "other"
-    if side == "right":
-        chat_box.insert(tk.END, f"\n{text}\n", tag)
-        chat_box.insert(tk.END, f"{time_str}\n", "time")
-    else:
-        chat_box.insert(tk.END, f"\n{sender}: {text}\n", tag)
-        chat_box.insert(tk.END, f"{time_str}\n", "time")
-    chat_box.config(state=tk.DISABLED)
-    chat_box.see(tk.END)
-
-
-def add_system(text):
-    chat_box.config(state=tk.NORMAL)
-    chat_box.insert(tk.END, f"\n— {text} —\n", "system")
-    chat_box.config(state=tk.DISABLED)
-    chat_box.see(tk.END)
-
-
-# ==============================
-# SEND FUNCTIONS
-# ==============================
-def send_text():
-    msg = entry.get().strip()
-    if not msg:
-        return
-    header = f"TEXT||{msg}\n".encode()
-    send_message(sock, header)
-    add_message(username, msg, "right")
-    entry.delete(0, tk.END)
-
-
-def send_image():
-    if not PIL_OK:
-        messagebox.showerror("Error", "Install Pillow: pip install Pillow")
-        return
-    path = filedialog.askopenfilename(filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp")])
+def send_img():
+    path = filedialog.askopenfilename(filetypes=[("Images", "*.jpg *.png *.jpeg")])
     if not path:
         return
 
-    filename = os.path.basename(path)
-    with Image.open(path) as img:
-        buf = io.BytesIO()
-        if hd_mode:
-            img.save(buf, format=img.format or "PNG")
-            mode = "hd"
-        else:
-            img.thumbnail((800, 800))
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            img.save(buf, format="JPEG", quality=60)
-            mode = "normal"
+    img = Image.open(path)
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
 
-    image_bytes = buf.getvalue()
-    header = f"IMAGE||{filename}|{mode}\n".encode()
-    send_message(sock, header + image_bytes)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    data = buf.getvalue()
 
-    label = f"📷 {'[HD] ' if hd_mode else ''}Image: {filename}"
-    add_message(username, label, "right")
+    payload = f"IMG|eslam|{os.path.basename(path)}|".encode() + data
+    send_packet(s, payload)
+    add_bubble("📷 Image sent", side="right")
 
 
 def send_file():
     path = filedialog.askopenfilename()
     if not path:
         return
-    filename = os.path.basename(path)
-    with open(path, 'rb') as f:
-        file_bytes = f.read()
 
-    header = f"FILE||{filename}\n".encode()
-    send_message(sock, header + file_bytes)
-    add_message(username, f"📎 File: {filename}", "right")
+    ext = os.path.splitext(path)[1]
+    t = "VIDEO" if ext in [".mp4", ".avi", ".mov"] else "FILE"
 
+    with open(path, "rb") as f:
+        file_data = f.read()
 
-def toggle_hd():
-    global hd_mode
-    hd_mode = not hd_mode
-    hd_btn.config(
-        text="HD: ON" if hd_mode else "HD: OFF",
-        bg="#e94560" if hd_mode else "#333"
-    )
+    payload = f"{t}|eslam|{os.path.basename(path)}|".encode() + file_data
+    send_packet(s, payload)
+    add_bubble(f"📎 {t} sent", side="right")
 
 
-# ==============================
-# RECEIVE LOOP
-# ==============================
-def receive_loop():
+def receive():
     while True:
-        raw = recv_message(sock)
-        if raw is None:
+        try:
+            raw_len = recvall(s, 4)
+            if not raw_len:
+                continue
+
+            length = struct.unpack("!I", raw_len)[0]
+            data = recvall(s, length)
+            if not data:
+                continue
+
+            if data.startswith(b"TEXT|"):
+                _, user, msg = data.decode().split("|", 2)
+                root.after(0, lambda u=user, m=msg: add_bubble(f"{u}: {m}", side="left"))
+
+            elif data.startswith(b"IMG|") or data.startswith(b"FILE|") or data.startswith(b"VIDEO|"):
+                header, user, name, filedata = data.split(b"|", 3)
+                filename = "recv_" + name.decode()
+                with open(filename, "wb") as f:
+                    f.write(filedata)
+                label = header.decode()
+                icon = "📷" if label == "IMG" else "📎"
+                root.after(0, lambda l=label, u=user.decode(), ic=icon: add_bubble(f"{ic} {l} from {u}", side="left"))
+
+        except:
             break
 
-        newline = raw.find(b'\n')
-        if newline == -1:
-            continue
 
-        header = raw[:newline].decode()
-        payload = raw[newline + 1:]
-        parts = header.split('|')
+# ── الاتصال ──────────────────────────────────────
+s = socket.socket()
+s.connect(("nozomi.proxy.rlwy.net", 41172))
 
-        msg_type = parts[0]
-        sender = parts[1] if len(parts) > 1 else ''
-        extra = parts[2] if len(parts) > 2 else ''
+# ── UI ───────────────────────────────────────────
+root = Tk()
+root.title("Chat")
+root.geometry("400x600")
+root.configure(bg="#1e1e2e")
 
-        if msg_type == "TEXT":
-            root.after(0, add_message, sender, extra, "left")
+# منطقة الرسائل (Canvas + Scrollbar)
+chat_frame = Frame(root, bg="#1e1e2e")
+chat_frame.pack(fill=BOTH, expand=True)
 
-        elif msg_type == "IMAGE":
-            filename = extra
-            mode = parts[3] if len(parts) > 3 else ''
-            label = f"📷 {'[HD] ' if mode == 'hd' else ''}Image: {filename}"
-            root.after(0, add_message, sender, label, "left")
-            if payload and PIL_OK:
-                def show_save(data=payload, fname=filename):
-                    if messagebox.askyesno("Image received", f"Save {fname}?"):
-                        save_path = filedialog.asksaveasfilename(initialfile=fname)
-                        if save_path:
-                            with open(save_path, 'wb') as f:
-                                f.write(data)
-                root.after(0, show_save)
+scrollbar = Scrollbar(chat_frame)
+scrollbar.pack(side=RIGHT, fill=Y)
 
-        elif msg_type == "FILE":
-            filename = extra
-            size_kb = len(payload) / 1024
-            label = f"📎 File: {filename} ({size_kb:.1f} KB)"
-            root.after(0, add_message, sender, label, "left")
-            if payload:
-                def show_save_file(data=payload, fname=filename):
-                    if messagebox.askyesno("File received", f"Save {fname}?"):
-                        save_path = filedialog.asksaveasfilename(initialfile=fname)
-                        if save_path:
-                            with open(save_path, 'wb') as f:
-                                f.write(data)
-                root.after(0, show_save_file)
+canvas = Canvas(chat_frame, bg="#1e1e2e", yscrollcommand=scrollbar.set, highlightthickness=0)
+canvas.pack(side=LEFT, fill=BOTH, expand=True)
+scrollbar.config(command=canvas.yview)
 
-        elif msg_type == "SYSTEM":
-            root.after(0, add_system, sender)
+messages_frame = Frame(canvas, bg="#1e1e2e")
+canvas_window = canvas.create_window((0, 0), window=messages_frame, anchor="nw")
 
+def on_frame_configure(e):
+    canvas.configure(scrollregion=canvas.bbox("all"))
 
-threading.Thread(target=receive_loop, daemon=True).start()
+def on_canvas_configure(e):
+    canvas.itemconfig(canvas_window, width=e.width)
 
-# ==============================
-# BUTTONS
-# ==============================
-btn_frame = tk.Frame(root, bg="#16213e")
-btn_frame.pack(fill=tk.X, padx=8)
+messages_frame.bind("<Configure>", on_frame_configure)
+canvas.bind("<Configure>", on_canvas_configure)
 
-s = {"font": ("Helvetica", 9), "relief": tk.FLAT, "padx": 8, "pady": 5, "cursor": "hand2"}
+# منطقة الإدخال
+bottom = Frame(root, bg="#2e2e3e", pady=6)
+bottom.pack(fill=X)
 
-tk.Button(btn_frame, text="🖼 Image", command=send_image, bg="#0f3460", fg="white", **s).pack(side=tk.LEFT, padx=3, pady=4)
-tk.Button(btn_frame, text="📁 File", command=send_file, bg="#0f3460", fg="white", **s).pack(side=tk.LEFT, padx=3)
-hd_btn = tk.Button(btn_frame, text="HD: OFF", command=toggle_hd, bg="#333", fg="white", **s)
-hd_btn.pack(side=tk.LEFT, padx=3)
+entry = Entry(bottom, font=("Segoe UI", 11), bg="#3e3e4e", fg="white",
+              insertbackground="white", relief=FLAT, bd=5)
+entry.pack(side=LEFT, fill=X, expand=True, padx=(10, 4))
+entry.bind("<Return>", lambda e: send())
 
-input_frame = tk.Frame(root, bg="#16213e")
-input_frame.pack(fill=tk.X, padx=8, pady=8)
+Button(bottom, text="➤", command=send, bg="#4f8ef7", fg="white",
+       relief=FLAT, font=("Segoe UI", 12), padx=8).pack(side=LEFT, padx=(0, 4))
+Button(bottom, text="🖼", command=send_img, bg="#2e2e3e", fg="white",
+       relief=FLAT, font=("Segoe UI", 12), padx=6).pack(side=LEFT)
+Button(bottom, text="📎", command=send_file, bg="#2e2e3e", fg="white",
+       relief=FLAT, font=("Segoe UI", 12), padx=6).pack(side=LEFT, padx=(0, 10))
 
-entry = tk.Entry(input_frame, font=("Helvetica", 11), bg="#0f3460", fg="white",
-                 insertbackground="white", relief=tk.FLAT)
-entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=7, padx=(0, 6))
-entry.bind("<Return>", lambda e: send_text())
-
-tk.Button(input_frame, text="Send ➤", command=send_text,
-          font=("Helvetica", 10, "bold"), bg="#e94560", fg="white",
-          relief=tk.FLAT, padx=10, pady=7, cursor="hand2").pack(side=tk.RIGHT)
-
+threading.Thread(target=receive, daemon=True).start()
 root.mainloop()

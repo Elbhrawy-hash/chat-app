@@ -1,80 +1,65 @@
 import socket
 import threading
+import struct
 
-# EOF marker - بدل ما نبعت حجم الملف
-EOF_MARKER = b'\x00\xFF\xEE\xFF\x00'
-
-clients = {}  # {conn: username}
+clients = []
 
 
-def broadcast(data, sender_conn):
-    for conn in list(clients):
-        if conn != sender_conn:
+def recvall(conn, n):
+    data = b""
+    while len(data) < n:
+        packet = conn.recv(n - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
+
+
+def send_packet(conn, data):
+    conn.sendall(struct.pack("!I", len(data)) + data)
+
+
+def broadcast(data, sender):
+    for c in clients:
+        if c != sender:
             try:
-                conn.sendall(data)
+                send_packet(c, data)
             except:
                 pass
 
 
-def recv_message(conn):
-    """استقبل رسالة كاملة لحد ما تلاقي الـ EOF_MARKER"""
-    buffer = b''
+def handle(conn):
     while True:
-        chunk = conn.recv(4096)
-        if not chunk:
-            return None
-        buffer += chunk
-        if EOF_MARKER in buffer:
-            data, _ = buffer.split(EOF_MARKER, 1)
-            return data
+        try:
+            raw_len = recvall(conn, 4)
+            if not raw_len:
+                break
 
+            length = struct.unpack("!I", raw_len)[0]
+            data = recvall(conn, length)
 
-def send_message(conn, data):
-    conn.sendall(data + EOF_MARKER)
+            if not data:
+                break
 
+            broadcast(data, conn)
 
-def handle_client(conn, addr):
-    # أول رسالة = اسم المستخدم
-    raw = recv_message(conn)
-    if not raw:
-        conn.close()
-        return
-
-    username = raw.decode()
-    clients[conn] = username
-    print(f"{username} connected")
-    broadcast(f"SYSTEM|{username} joined\n".encode(), conn)
-
-    while True:
-        raw = recv_message(conn)
-        if raw is None:
+        except:
             break
 
-        # Header في أول سطر: TYPE|extra
-        newline = raw.find(b'\n')
-        header = raw[:newline].decode()
-        payload = raw[newline + 1:]
-
-        parts = header.split('|')
-        msg_type = parts[0]
-        extra = '|'.join(parts[1:])
-
-        # أضف اسم المرسل وابعت للكل
-        new_header = f"{msg_type}|{username}|{extra}\n".encode()
-        broadcast(new_header + payload, conn)
-
-    del clients[conn]
+    if conn in clients:
+        clients.remove(conn)
     conn.close()
-    broadcast(f"SYSTEM|{username} left\n".encode(), conn)
-    print(f"{username} disconnected")
 
 
-server = socket.socket()
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(('0.0.0.0', 12345))
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(("0.0.0.0", 12345))
 server.listen(5)
-print("Server running on port 12345...")
+
+print("Server running...")
 
 while True:
     conn, addr = server.accept()
-    threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+    clients.append(conn)
+    print("Connected:", addr)
+
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
