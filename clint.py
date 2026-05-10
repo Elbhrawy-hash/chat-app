@@ -127,6 +127,8 @@ def send_image():
             mode = "hd"
         else:
             img.thumbnail((800, 800))
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
             img.save(buf, format="JPEG", quality=60)
             mode = "normal"
 
