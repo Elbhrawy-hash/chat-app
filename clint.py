@@ -15,9 +15,6 @@ except:
 # ==============================
 # PROTOCOL
 # ==============================
-# كل رسالة ليها EOF_MARKER في الآخر بدل ما نبعت الحجم
-# Header format:  TYPE|sender|extra\n
-# Types: TEXT / IMAGE / FILE / SYSTEM
 EOF_MARKER = b'\x00\xFF\xEE\xFF\x00'
 
 
@@ -40,19 +37,16 @@ def send_message(conn, data):
 # ==============================
 # CONNECT
 # ==============================
+HOST = "nozomi.proxy.rlwy.net"
+PORT = 41172
+
 username = simpledialog.askstring("Username", "Enter your name:") or "User"
 
-root_temp = tk.Tk()
-root_temp.withdraw()
-host = simpledialog.askstring("Server", "Server address:", initialvalue="localhost") or "localhost"
-port = int(simpledialog.askstring("Port", "Port:", initialvalue="12345") or 12345)
-root_temp.destroy()
-
 sock = socket.socket()
-sock.connect((host, port))
-send_message(sock, username.encode())  # أول رسالة = اسم المستخدم
+sock.connect((HOST, PORT))
+send_message(sock, username.encode())
 
-hd_mode = False  # وضع الـ HD
+hd_mode = False
 
 # ==============================
 # GUI
@@ -62,7 +56,6 @@ root.title(f"Chat - {username}")
 root.configure(bg="#1e1e2e")
 root.geometry("420x600")
 
-# Chat area
 chat_frame = tk.Frame(root, bg="#1e1e2e")
 chat_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
@@ -78,7 +71,6 @@ chat_box = tk.Text(
 chat_box.pack(fill=tk.BOTH, expand=True)
 scrollbar.config(command=chat_box.yview)
 
-# Tags للتلوين
 chat_box.tag_config("me", foreground="#e94560", justify="right")
 chat_box.tag_config("other", foreground="#4ecca3", justify="left")
 chat_box.tag_config("system", foreground="#555", justify="center")
@@ -89,14 +81,12 @@ def add_message(sender, text, side):
     chat_box.config(state=tk.NORMAL)
     time_str = datetime.now().strftime("%H:%M")
     tag = "me" if side == "right" else "other"
-
     if side == "right":
         chat_box.insert(tk.END, f"\n{text}\n", tag)
         chat_box.insert(tk.END, f"{time_str}\n", "time")
     else:
         chat_box.insert(tk.END, f"\n{sender}: {text}\n", tag)
         chat_box.insert(tk.END, f"{time_str}\n", "time")
-
     chat_box.config(state=tk.DISABLED)
     chat_box.see(tk.END)
 
@@ -133,11 +123,9 @@ def send_image():
     with Image.open(path) as img:
         buf = io.BytesIO()
         if hd_mode:
-            # HD: بدون ضغط
             img.save(buf, format=img.format or "PNG")
             mode = "hd"
         else:
-            # Normal: ضغط
             img.thumbnail((800, 800))
             img.save(buf, format="JPEG", quality=60)
             mode = "normal"
@@ -201,8 +189,6 @@ def receive_loop():
             mode = parts[3] if len(parts) > 3 else ''
             label = f"📷 {'[HD] ' if mode == 'hd' else ''}Image: {filename}"
             root.after(0, add_message, sender, label, "left")
-
-            # حفظ الصورة لو عوز
             if payload and PIL_OK:
                 def show_save(data=payload, fname=filename):
                     if messagebox.askyesno("Image received", f"Save {fname}?"):
@@ -217,7 +203,6 @@ def receive_loop():
             size_kb = len(payload) / 1024
             label = f"📎 File: {filename} ({size_kb:.1f} KB)"
             root.after(0, add_message, sender, label, "left")
-
             if payload:
                 def show_save_file(data=payload, fname=filename):
                     if messagebox.askyesno("File received", f"Save {fname}?"):
