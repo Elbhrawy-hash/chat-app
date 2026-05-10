@@ -1,6 +1,5 @@
 import socket
 import threading
-import os
 
 # EOF marker - بدل ما نبعت حجم الملف
 EOF_MARKER = b'\x00\xFF\xEE\xFF\x00'
@@ -70,14 +69,11 @@ def handle_client(conn, addr):
     print(f"{username} disconnected")
 
 
-# Railway بيحدد الـ PORT تلقائياً عن طريق environment variable
-PORT = int(os.environ.get("PORT", 12345))
-
 server = socket.socket()
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(('0.0.0.0', PORT))
+server.bind(('0.0.0.0', 12345))
 server.listen(5)
-print(f"Server running on port {PORT}...")
+print("Server running on port 12345...")
 
 while True:
     conn, addr = server.accept()
